@@ -168,6 +168,7 @@ $("footer-message").textContent = msgs[Math.floor(Math.random() * msgs.length)];
 // ---- counter: shared by everyone, stored on the server (D1 behind /api/count)
 const PENDING_KEY = "delete-discord-pending";
 const MAX_BATCH = 50;
+const POLL_MS = 2000; // how often to fetch everyone else's clicks
 let base = { total: 0, today: 0, week: 0, month: 0, year: 0 }; // last numbers from the server
 let pending = 0, inflight = 0, sending = false, epoch = 0, retryAt = 0;
 try { pending = Math.max(0, parseInt(localStorage.getItem(PENDING_KEY), 10) || 0); } catch {}
@@ -221,7 +222,7 @@ function render() {
 }
 
 function count() {
-  pending++; savePending(); render();
+  pending++; savePending(); render(); flush();
   const t = $("total");
   t.classList.remove("counter-flash");
   requestAnimationFrame(() => t.classList.add("counter-flash"));
@@ -385,7 +386,7 @@ let rt;
 addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { buildRain(); fit(); }, 150); });
 document.fonts.ready.then(fit);
 pull(); flush();
-setInterval(pull, 10000); setInterval(flush, 1000);
+setInterval(pull, POLL_MS); setInterval(flush, 250);
 addEventListener("online", () => { retryAt = 0; flush(); pull(); });
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) { pull(); return; }

@@ -1,5 +1,5 @@
-// _worker.js — Cloudflare Pages worker for "delete discord."
-// Keeps the shared counter in a D1 database bound to this Pages project as DB.
+// src/worker.js — Cloudflare Pages worker for "delete discord."
+// Shared counter in a D1 database bound to the Pages project as DB.
 // Every request that isn't /api/count is served as a normal static file.
 
 const MAX_BATCH = 50; // most clicks a single request may add
@@ -18,8 +18,9 @@ const setup = db => (ready ??= db
   .run()
   .catch(err => { ready = undefined; throw err; }));
 
-function stats(db) {
-  const now = new Date(), today = iso(now);
+// Prepared (not yet run) statement, so it can be sent alone or batched with a write.
+function statsQuery(db, now) {
+  const today = iso(now);
   const mon = new Date(now);
   mon.setUTCDate(now.getUTCDate() - ((now.getUTCDay() + 6) % 7)); // weeks begin Monday
   return db.prepare(
@@ -29,7 +30,7 @@ function stats(db) {
             COALESCE(SUM(CASE WHEN day >= ?3 THEN n END), 0) AS month,
             COALESCE(SUM(CASE WHEN day >= ?4 THEN n END), 0) AS year
      FROM daily`
-  ).bind(today, iso(mon), today.slice(0, 7) + "-01", today.slice(0, 4) + "-01-01").first();
+  ).bind(today, iso(mon), today.slice(0, 7) + "-01", today.slice(0, 4) + "-01-01");
 }
 
 export default {
@@ -41,7 +42,7 @@ export default {
     try {
       await setup(env.DB);
 
-      if (request.method === "GET") return json(await stats(env.DB));
+      if (request.method === "GET") return json(await statsQuery(env.DB, new Date()).first());
 
       if (request.method === "POST") {
         const origin = request.headers.get("origin");
@@ -53,11 +54,16 @@ export default {
         const body = await request.json().catch(() => null);
         const n = Math.floor(Number(body && body.count));
         if (!Number.isFinite(n) || n < 1) return json({ error: "bad count" }, 400);
-        await env.DB
-          .prepare("INSERT INTO daily (day, n) VALUES (?1, ?2) ON CONFLICT(day) DO UPDATE SET n = daily.n + excluded.n")
-          .bind(iso(new Date()), Math.min(n, MAX_BATCH))
-          .run();
-        return json(await stats(env.DB));
+
+        const now = new Date();
+        // One round trip: add the clicks, then read the fresh totals in the same batch.
+        const [, res] = await env.DB.batch([
+          env.DB
+            .prepare("INSERT INTO daily (day, n) VALUES (?1, ?2) ON CONFLICT(day) DO UPDATE SET n = daily.n + excluded.n")
+            .bind(iso(now), Math.min(n, MAX_BATCH)),
+          statsQuery(env.DB, now),
+        ]);
+        return json(res.results[0]);
       }
 
       return json({ error: "method not allowed" }, 405);

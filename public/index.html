@@ -77,6 +77,11 @@ dialog .fine-print{font-size:11px}
 .music-toggle[aria-pressed="true"]{color:var(--accent-bright)}
 .music-toggle[aria-pressed="true"] .x,.music-toggle[aria-pressed="false"] .waves{display:none}
 @media(max-width:640px){.music-toggle{top:12px;right:14px}}
+.sfx-toggle{position:fixed;top:18px;right:calc(5.4% - 8px + 46px);z-index:4;width:38px;height:38px}
+.sfx-toggle svg{width:20px;height:20px}
+.sfx-toggle[aria-pressed="true"]{color:var(--accent-bright)}
+.sfx-toggle[aria-pressed="true"] .slash{display:none}
+@media(max-width:640px){.sfx-toggle{top:12px;right:52px}}
 @media(min-width:1500px){.total-row{min-height:190px}}
 @media(max-width:640px){
 .icon-button{width:30px;height:32px}
@@ -111,6 +116,9 @@ footer{min-height:76px;margin:0 24px;font-size:10px;gap:10px}
   </main>
   <button id="music-toggle" class="icon-button music-toggle" aria-label="Unmute music" aria-pressed="false" title="Unmute music">
     <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><g class="waves"><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></g><g class="x"><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/></g></svg>
+  </button>
+  <button id="sfx-toggle" class="icon-button sfx-toggle" aria-label="Mute explosion sound" aria-pressed="true" title="Mute explosion sound">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="22,12 16.62,13.91 19.07,19.07 13.91,16.62 12,22 10.09,16.62 4.93,19.07 7.38,13.91 2,12 7.38,10.09 4.93,4.93 10.09,7.38 12,2 13.91,7.38 19.07,4.93 16.62,10.09"/><line class="slash" x1="3" y1="3" x2="21" y2="21"/></svg>
   </button>
   <footer>
     <span id="footer-message"></span>
@@ -233,6 +241,10 @@ const VOLUME = 0.19;
 const SND = $("explosion-sound").textContent.trim();
 const AC = window.AudioContext || window.webkitAudioContext;
 let actx, boom, lead = 0, pool, poolIdx = 0, lastSound = 0;
+const SFX_KEY = "delete-discord-sfx";
+let sfxOn = true;
+try { sfxOn = localStorage.getItem(SFX_KEY) !== "off"; } catch {}
+const live = new Set(); // explosion sounds still playing
 function findLead(b) { // the MP3 starts with ~0.4 s of silence; skip it so the boom is instant
   let first = b.length;
   for (let c = 0; c < b.numberOfChannels; c++) {
@@ -252,6 +264,7 @@ function fallbackPlay() { // plain <audio> if Web Audio is unavailable
   a.currentTime = 0.39; a.play().catch(() => {});
 }
 function playBoom() {
+  if (!sfxOn) return;
   const now = performance.now();
   if (now - lastSound < 100) return;
   lastSound = now;
@@ -260,6 +273,7 @@ function playBoom() {
     const src = actx.createBufferSource(), gain = actx.createGain();
     src.buffer = boom; gain.gain.value = VOLUME;
     src.connect(gain); gain.connect(actx.destination); src.start(0, lead);
+    live.add(src); src.onended = () => live.delete(src);
   } else fallbackPlay();
 }
 ["pointerdown", "keydown"].forEach(ev => addEventListener(ev, () => { if (actx && actx.state === "suspended") actx.resume(); }, { passive: true }));
@@ -366,6 +380,24 @@ function setMusic(on) {
 }
 ["pointerenter", "focus", "touchstart"].forEach(ev => musicBtn.addEventListener(ev, musicLoad, { once: true, passive: true })); // pre-decode before the click
 musicBtn.addEventListener("click", () => setMusic(!musicOn));
+
+// ---- explosion sound on/off (remembered between visits)
+const sfxBtn = $("sfx-toggle");
+function paintSfx() {
+  sfxBtn.setAttribute("aria-pressed", String(sfxOn));
+  const label = sfxOn ? "Mute explosion sound" : "Unmute explosion sound";
+  sfxBtn.setAttribute("aria-label", label); sfxBtn.title = label;
+}
+function setSfx(on) {
+  sfxOn = on; paintSfx();
+  try { localStorage.setItem(SFX_KEY, on ? "on" : "off"); } catch {}
+  if (!on) { // cut off anything already playing
+    live.forEach(n => { try { n.stop(); } catch {} }); live.clear();
+    if (pool) pool.forEach(a => a.pause());
+  }
+}
+sfxBtn.addEventListener("click", () => setSfx(!sfxOn));
+paintSfx();
 
 // ---- credits dialog
 const dlg = $("credits");

@@ -4,7 +4,7 @@ type Link = [text: string, href: string];
 
 const CREDITS: [term: string, ...parts: (Link | string)[]][] = [
   ["Creator", ["m5rcel", "https://twitter.com/m5rcode"]],
-  ["Inspired by", ["delete vencord. by yash", "https://github.com/YashRajCodes/"]],
+  ["Inspired by", ["yash's awesome vencord.org site", "https://github.com/YashRajCodes/"]],
   ["Logo", ["Discord", "https://discord.com/branding"]],
   ["Explosion", ["Pixel explosion by JROB774", "https://opengameart.org/content/pixel-explosion-12-frames"], " · ",
     ["CC BY 3.0", "https://creativecommons.org/licenses/by/3.0/"], ". Scaled for display."],
@@ -25,7 +25,7 @@ export function createCredits() {
     h("div", { class: "dialog-heading" }, h("h2", {}, "credits"), close),
     h("p", {}, "This site is unaffiliated with Discord."),
     h("dl", {}, ...CREDITS.flatMap(([term, ...parts]) => [h("dt", {}, term), h("dd", {}, ...parts.map(part))])),
-    h("p", { class: "fine-print" }, "Calendar totals use UTC; weeks begin Monday. Explosions are for fun. Counts are shared by everyone who plays."));
+    h("p", { class: "fine-print" }, "nothing personal towards discord but i was bored when i was making this lol."));
 
   close.addEventListener("click", () => el.close());
   el.addEventListener("click", e => {

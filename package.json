@@ -3,10 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite build && wrangler dev",
+    "dev": "vite build --mode development && wrangler dev",
     "build": "vite build",
     "check": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
-    "deploy": "vite build && wrangler deploy"
+    "deploy": "vite build && wrangler deploy",
+    "test": "node --test test/*.test.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261016.1",

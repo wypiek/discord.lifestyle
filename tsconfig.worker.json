@@ -9,5 +9,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src/worker.ts", "src/shared"]
+  "include": ["src/worker", "src/shared"]
 }

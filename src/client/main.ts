@@ -3,15 +3,17 @@ import { createCounter } from "./components/Counter";
 import { createCredits } from "./components/Credits";
 import { explode } from "./components/Explosion";
 import { createFooter } from "./components/Footer";
+import { createMaintenance } from "./components/Maintenance";
 import { createMusicToggle } from "./components/MusicToggle";
 import { createRain } from "./components/Rain";
 import { createSfxToggle } from "./components/SfxToggle";
 import { watchMotion } from "./lib/motion";
 import { playBoom } from "./sfx";
-import { addClick, startSync } from "./sync";
+import { addClick, refresh, startSync } from "./sync";
 
 const counter = createCounter();
 const credits = createCredits();
+const maintenance = createMaintenance(refresh);
 const rain = createRain((x, y) => {
   playBoom();
   explode(x, y);
@@ -20,12 +22,15 @@ const rain = createRain((x, y) => {
 });
 
 const app = document.getElementById("app")!;
-app.append(rain.el, counter.el, createMusicToggle(), createSfxToggle(), createFooter(credits.open));
+app.append(rain.el, counter.el, maintenance.el, createMusicToggle(), createSfxToggle(), createFooter(credits.open));
 document.body.append(credits.el);
 
 watchMotion();
 rain.start();
-startSync(counter.update);
+startSync(({ stats, notice, maintenance: down }) => {
+  counter.update(stats, notice);
+  if (down) maintenance.show(down.until); else maintenance.hide();
+});
 
 let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 addEventListener("resize", () => {

@@ -1,0 +1,5 @@
+# Copy to .dev.vars for `npm run dev`. These are Cloudflare's always-pass Turnstile test keys.
+TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+SESSION_SECRET=local-dev-only-change-me
+# Optional, to test the automatic D1 usage check locally:
+# CF_API_TOKEN=

@@ -1,10 +1,8 @@
+// Everything here is set in the Pages dashboard: Settings > Bindings (DB) and
+// Settings > Variables and Secrets (the rest). Locally, `npm run dev` passes DB and
+// reads the rest from .dev.vars.
 export interface Env {
-  ASSETS: Fetcher;
   DB?: D1Database;
-  /** GET /api/count and /api/verify, keyed by IP. */
-  READ_LIMITER: RateLimit;
-  /** POST /api/count, keyed by human-check session. */
-  CLICK_LIMITER: RateLimit;
 
   /** Secret: Turnstile widget secret key. */
   TURNSTILE_SECRET?: string;

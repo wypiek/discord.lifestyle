@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { newSession, sessionId } from "../src/worker/human.ts";
+import { createLimiter } from "../src/worker/limiter.ts";
 import { maintenance } from "../src/worker/maintenance.ts";
 
 const env = { SESSION_SECRET: "test-secret", CF_API_TOKEN: "t", CF_ACCOUNT_ID: "a" } as any;
@@ -52,4 +53,14 @@ test("maintenance follows D1 usage, the manual switch, and keeps the last answer
   assert.deepEqual(await maintenance({ ...env, MAINTENANCE: "on" }), { until: null });
   assert.equal(await maintenance({ ...env, MAINTENANCE: "off" }), null);
   assert.equal(await maintenance({ ...env, CF_API_TOKEN: undefined }), null);
+});
+
+test("limiter allows `limit` hits per window per key, then resets", t => {
+  let now = 0;
+  t.mock.method(Date, "now", () => now);
+  const ok = createLimiter(3, 10_000);
+  assert.deepEqual([ok("a"), ok("a"), ok("a"), ok("a")], [true, true, true, false]);
+  assert.equal(ok("b"), true, "keys are independent");
+  now = 10_000;
+  assert.equal(ok("a"), true, "new window");
 });

@@ -9,5 +9,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src/worker", "src/shared"]
+  "include": ["functions", "src/worker", "src/shared"]
 }

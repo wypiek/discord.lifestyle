@@ -9,12 +9,7 @@ export interface Env {
   /** Secret: random string used to sign session cookies. */
   SESSION_SECRET?: string;
 
-  /** "auto" (default) watches D1 usage, "on" forces the maintenance page, "off" never shows it. */
+  /** "auto" (default) shows the maintenance page once D1's daily limit is hit, "on" forces
+   *  it, "off" never shows it. */
   MAINTENANCE?: string;
-  CF_ACCOUNT_ID?: string;
-  /** Secret: API token with Account Analytics: Read, used to watch D1 usage. */
-  CF_API_TOKEN?: string;
-  /** Daily account-wide D1 limits for your plan. */
-  DB_DAILY_READ_LIMIT?: string;
-  DB_DAILY_WRITE_LIMIT?: string;
 }

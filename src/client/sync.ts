@@ -64,7 +64,14 @@ async function flush(): Promise<void> { // send clicks the server hasn't seen ye
   pending -= n; inflight = n; sending = true; epoch++; savePending();
   try {
     const r = await api("POST", { count: n });
-    if (r.ok) { base = await r.json(); inflight = 0; retryAt = 0; notice = ""; return; }
+    if (r.ok) {
+      // The server counts at most the session's click budget; the rest go back in the queue.
+      const { accepted = n, ...stats } = await r.json() as Stats & { accepted?: number };
+      const counted = Math.max(0, Math.min(n, accepted));
+      base = stats; pending += n - counted; inflight = 0; savePending();
+      retryAt = 0; notice = counted < n ? SLOW_NOTICE : "";
+      return;
+    }
 
     pending += inflight; inflight = 0; savePending(); // not counted: keep them for later
     if (await checkMaintenance(r)) return;

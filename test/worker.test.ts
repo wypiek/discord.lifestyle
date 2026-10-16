@@ -1,11 +1,13 @@
 // Run with `npm test` (Node runs the TypeScript directly).
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
+import { addClicks, CLICK_BURST, CLICK_RATE, getStats } from "../src/worker/counter.ts";
 import { newSession, sessionId } from "../src/worker/human.ts";
-import { createLimiter } from "../src/worker/limiter.ts";
-import { maintenance } from "../src/worker/maintenance.ts";
+import { createLimiter, ipKey } from "../src/worker/limiter.ts";
+import { maintenance, noteDbError } from "../src/worker/maintenance.ts";
 
-const env = { SESSION_SECRET: "test-secret", CF_API_TOKEN: "t", CF_ACCOUNT_ID: "a" } as any;
+const env = { SESSION_SECRET: "test-secret" } as any;
 const withCookie = (cookie: string) => new Request("https://x/api/count", { headers: { cookie } });
 
 test("session cookie round-trips and rejects tampering, other secrets and expiry", async t => {
@@ -21,38 +23,21 @@ test("session cookie round-trips and rejects tampering, other secrets and expiry
   assert.equal(await sessionId(env, withCookie(value)), null);
 });
 
-test("maintenance follows D1 usage, the manual switch, and keeps the last answer on API errors", async t => {
-  let now = Date.UTC(2026, 9, 16, 12);
-  t.mock.method(Date, "now", () => now);
-  let reply: unknown = null;
-  const fetchMock = t.mock.method(globalThis, "fetch", async () =>
-    reply instanceof Error ? Promise.reject(reply) : new Response(JSON.stringify(reply)));
-  const usage = (rowsRead: number, rowsWritten: number) =>
-    ({ data: { viewer: { accounts: [{ d1AnalyticsAdaptiveGroups: [{ sum: { rowsRead, rowsWritten } }] }] } } });
-  const next = (r: unknown) => { reply = r; now += 61_000; }; // past the per-minute cache
+test("maintenance turns on when D1 hits its daily limit, until 00:00 UTC", t => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.UTC(2026, 9, 16, 12) });
+  assert.equal(maintenance(env), null);
+  assert.equal(noteDbError(new Error("D1_ERROR: D1 DB exceeded its CPU time limit and was reset.")), false);
+  assert.equal(maintenance(env), null, "other D1 errors don't count");
 
-  next(usage(1_000_000, 10_000));
-  assert.equal(await maintenance(env), null);
-  next(usage(4_600_000, 0)); // 92% of 5M reads
-  assert.deepEqual(await maintenance(env), { until: Date.UTC(2026, 9, 17) });
-  next(usage(0, 95_000)); // 95% of 100K writes
-  assert.ok(await maintenance(env));
-  next(new Error("network down"));
-  assert.ok(await maintenance(env), "API failure keeps the last reading");
-  next({ errors: [{ message: "bad token" }] });
-  assert.ok(await maintenance(env));
-  next(usage(10, 10));
-  assert.equal(await maintenance(env), null);
-  next(usage(4_600_000, 0));
-  assert.equal(await maintenance({ ...env, DB_DAILY_READ_LIMIT: "25000000000" }), null, "paid-plan limit");
+  assert.equal(noteDbError(new Error("D1_ERROR: Your account has exceeded D1's free tier daily row write limit.")), true);
+  assert.deepEqual(maintenance(env), { until: Date.UTC(2026, 9, 17) });
+  assert.equal(maintenance({ ...env, MAINTENANCE: "off" }), null);
+  t.mock.timers.tick(12 * 60 * 60_000);
+  assert.equal(maintenance(env), null, "limits reset at midnight");
 
-  const calls = fetchMock.mock.callCount();
-  assert.equal(await maintenance(env), null, "cached within the minute");
-  assert.equal(fetchMock.mock.callCount(), calls);
-
-  assert.deepEqual(await maintenance({ ...env, MAINTENANCE: "on" }), { until: null });
-  assert.equal(await maintenance({ ...env, MAINTENANCE: "off" }), null);
-  assert.equal(await maintenance({ ...env, CF_API_TOKEN: undefined }), null);
+  assert.ok(noteDbError("Your account has exceeded D1's free tier daily row read limit."));
+  assert.deepEqual(maintenance(env), { until: Date.UTC(2026, 9, 18) });
+  assert.deepEqual(maintenance({ ...env, MAINTENANCE: "on" }), { until: null });
 });
 
 test("limiter allows `limit` hits per window per key, then resets", t => {
@@ -63,4 +48,57 @@ test("limiter allows `limit` hits per window per key, then resets", t => {
   assert.equal(ok("b"), true, "keys are independent");
   now = 10_000;
   assert.equal(ok("a"), true, "new window");
+});
+
+test("ipKey groups IPv6 by /64 and leaves IPv4 alone", () => {
+  assert.equal(ipKey("203.0.113.7"), "203.0.113.7");
+  assert.equal(ipKey("2001:db8:1:2:aaaa::1"), "2001:db8:1:2::/64");
+  assert.equal(ipKey("2001:0db8:0001:0002:ffff:ffff:ffff:ffff"), "2001:db8:1:2::/64");
+  assert.equal(ipKey("2001:db8::5"), "2001:db8:0:0::/64");
+  assert.equal(ipKey("::1"), "0:0:0:0::/64");
+});
+
+// Just enough of D1 to run the real SQL on Node's SQLite.
+function fakeD1(): D1Database {
+  const sql = new DatabaseSync(":memory:");
+  const stmt = (query: string, args: unknown[] = []): any => ({
+    bind: (...a: unknown[]) => stmt(query, a),
+    all: () => ({ results: sql.prepare(query).all(...(args as any[])) }),
+    run() { return this.all(); },
+    first() { return this.all().results[0] ?? null; },
+  });
+  return {
+    prepare: (query: string) => stmt(query),
+    batch: async (list: any[]) => {
+      sql.exec("BEGIN");
+      try { const out = list.map(s => s.all()); sql.exec("COMMIT"); return out; }
+      catch (err) { sql.exec("ROLLBACK"); throw err; }
+    },
+  } as any;
+}
+
+test("click budget caps a session at CLICK_RATE per second after a CLICK_BURST", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.UTC(2026, 9, 16, 12) });
+  const wait = (ms: number) => t.mock.timers.tick(ms);
+  const db = fakeD1();
+
+  // A script spamming full batches: the first burst gets through, then nothing.
+  let counted = 0;
+  for (let i = 0; i < 10; i++) counted += (await addClicks(db, "bot", 50)).accepted;
+  assert.equal(counted, CLICK_BURST);
+  assert.equal((await addClicks(db, "bot", 50)).accepted, 0);
+
+  wait(1000); // one second refills CLICK_RATE
+  assert.equal((await addClicks(db, "bot", 50)).accepted, CLICK_RATE);
+  wait(60_000); // never saves up more than the burst
+  assert.equal((await addClicks(db, "bot", 500)).accepted, CLICK_BURST);
+
+  // Sessions are independent, and the totals only include accepted clicks.
+  const human = await addClicks(db, "human", 7);
+  assert.equal(human.accepted, 7);
+  assert.equal(human.stats.total, CLICK_BURST + CLICK_RATE + CLICK_BURST + 7);
+  assert.equal((await getStats(db))?.today, human.stats.total);
+
+  // A human clicking 10 times a second, batched every 500 ms, never loses a click.
+  for (let i = 0; i < 100; i++) { wait(500); assert.equal((await addClicks(db, "human", 5)).accepted, 5); }
 });

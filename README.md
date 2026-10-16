@@ -16,9 +16,9 @@ src/client/assets/      images and audio
 src/shared/stats.ts     types shared by the browser and the worker
 functions/api/[[path]].ts  Pages Functions entry for /api/*
 src/worker/api.ts       routes, origin check, rate limits
-src/worker/counter.ts   D1 queries
+src/worker/counter.ts   D1 queries and per-session click budget
 src/worker/human.ts     Turnstile verification and signed session cookies
-src/worker/maintenance.ts  switches on the maintenance page near D1's daily limits
+src/worker/maintenance.ts  switches on the maintenance page when D1's daily limits are hit
 src/worker/limiter.ts   in-memory rate limiter
 test/                   `npm test`
 ```
@@ -30,7 +30,7 @@ npm install
 cp .dev.vars.example .dev.vars   # local secrets (Turnstile test keys)
 npm run dev      # build, then run it like Pages (Functions + local D1) at http://localhost:8787
 npm run check    # typecheck client and functions
-npm test         # session signing, maintenance and rate limit logic
+npm test         # session signing, maintenance, rate limits and click budget
 ```
 
 ## Cloudflare Pages setup
@@ -45,13 +45,20 @@ Workers & Pages > your project > Settings.
     Turnstile > Add widget, mode Invisible). Used at build time.
   - `TURNSTILE_SECRET` (secret): that widget's secret key.
   - `SESSION_SECRET` (secret): a long random string, e.g. `openssl rand -base64 32`.
-  - Optional, for the automatic maintenance page: `CF_ACCOUNT_ID`, and `CF_API_TOKEN`
-    (secret) with *Account Analytics: Read*. At 90% of D1's daily reads or writes the
-    site shows the maintenance page until 00:00 UTC. Paid plan: set `DB_DAILY_READ_LIMIT`
-    and `DB_DAILY_WRITE_LIMIT`.
-  - `MAINTENANCE`: `on` shows the maintenance page by hand, `off` disables it.
+  - `MAINTENANCE`: `on` shows the maintenance page by hand, `off` disables it. By default
+    it turns on by itself when D1 refuses queries for hitting the free plan's daily row
+    limit, and stays on until 00:00 UTC when the limits reset. No account secrets needed.
 - **Runtime**: compatibility date `2025-09-01` or later.
 
-Redeploy after changing settings. Rate limits (300 reads/min per IP, 20 click batches per
-10 s per session) are counted per worker instance, since Pages has no rate limiting
-binding; for a strict global limit add a WAF rate limiting rule on a custom domain.
+Redeploy after changing settings.
+
+## Anti-spam
+
+- Clicks need a session cookie, which costs an invisible Turnstile check. At most 30 new
+  sessions per IP (IPv6: per /64) every 10 minutes.
+- Each session has a click budget in D1 (`budget` table): 100 clicks up front, refilling at
+  20 per second. Anything over the budget isn't counted; the browser re-queues it, so real
+  clickers lose nothing. Being in D1, it holds across all worker instances.
+- Request limits (300 reads/min per IP, 20 click batches per 10 s per session) are counted
+  per worker instance, since Pages has no rate limiting binding; they mainly keep floods
+  off D1. For a strict global request limit add a WAF rate limiting rule on a custom domain.

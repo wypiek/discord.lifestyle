@@ -20,3 +20,13 @@ export function createLimiter(limit: number, periodMs: number) {
     return ++w.hits <= limit;
   };
 }
+
+/** Rate limit key for an IP. IPv6 hosts usually own a whole /64, so it counts as one. */
+export function ipKey(ip: string): string {
+  if (!ip.includes(":")) return ip;
+  const [head, tail = ""] = ip.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right];
+  return groups.slice(0, 4).map(g => (parseInt(g, 16) || 0).toString(16)).join(":") + "::/64";
+}

@@ -6,9 +6,13 @@ import { ensureHuman, forgetHuman } from "./human";
 import { load, save } from "./lib/storage";
 
 const PENDING_KEY = "delete-discord-pending";
-const POLL_MS = 2000; // how often to fetch everyone else's clicks
+// How often to fetch everyone else's clicks. Each fetch is a Pages Functions request
+// (100K/day on the free plan), so poll fast only while the count is moving.
+const FAST_POLL_MS = 1000;
+const IDLE_POLL_MS = 2000; // same as before, so nothing is slower than it was
+const ACTIVE_FOR_MS = 20_000; // "moving" = changed or clicked within this long
 const MAINTENANCE_POLL_MS = 30_000; // slower while the site is down for maintenance
-const FLUSH_MS = 1000; // stays under the server's click rate limit
+const FLUSH_MS = 500; // 2 batches/s, under the server's 20 per 10 s click limit
 const RETRY_MS = 8000;
 const RATE_LIMIT_MS = 10_000;
 const OFFLINE_NOTICE = "can't reach the counter. your clicks will sync when it's back.";
@@ -25,7 +29,7 @@ export type SyncListener = (state: SyncState) => void;
 
 let base: Stats = { total: 0, today: 0, week: 0, month: 0, year: 0 }; // last numbers from the server
 let pending = Math.max(0, parseInt(load(PENDING_KEY) ?? "", 10) || 0);
-let inflight = 0, sending = false, epoch = 0, retryAt = 0, notice = "", lastPull = 0;
+let inflight = 0, sending = false, epoch = 0, retryAt = 0, notice = "", lastChange = 0;
 let maintenance: SyncState["maintenance"] = null;
 let listener: SyncListener = () => {};
 
@@ -80,8 +84,6 @@ async function flush(): Promise<void> { // send clicks the server hasn't seen ye
 
 async function pull(): Promise<void> { // fetch the shared totals
   if (document.hidden || sending) return;
-  if (maintenance && Date.now() - lastPull < MAINTENANCE_POLL_MS) return;
-  lastPull = Date.now();
   const e = epoch;
   try {
     const r = await api("GET");
@@ -90,6 +92,7 @@ async function pull(): Promise<void> { // fetch the shared totals
     const s: Stats = await r.json();
     maintenance = null;
     if (e !== epoch || sending || s.total < base.total) { emit(); return; } // stale reply: ignore the numbers
+    if (s.total !== base.total) lastChange = Date.now();
     base = s; if (!retryAt) notice = ""; emit();
   } catch {}
 }
@@ -105,19 +108,24 @@ function beacon(): void {
 }
 
 export function addClick(): void {
+  lastChange = Date.now();
   pending++; savePending(); emit(); flush();
 }
 
 /** Fetch now instead of waiting for the next poll (e.g. when a maintenance countdown ends). */
-export function refresh(): void {
-  lastPull = 0; pull();
+export const refresh = () => { pull(); };
+
+function pollLoop(): void {
+  const delay = maintenance ? MAINTENANCE_POLL_MS
+    : Date.now() - lastChange < ACTIVE_FOR_MS ? FAST_POLL_MS : IDLE_POLL_MS;
+  setTimeout(() => pull().finally(pollLoop), delay);
 }
 
 export function startSync(onChange: SyncListener): void {
   listener = onChange;
   emit(); pull();
   ensureHuman().then(flush, () => {}); // check in the background so the first click isn't delayed
-  setInterval(pull, POLL_MS); setInterval(flush, FLUSH_MS);
+  pollLoop(); setInterval(flush, FLUSH_MS);
   addEventListener("online", () => { retryAt = 0; flush(); refresh(); });
   document.addEventListener("visibilitychange", () => (document.hidden ? beacon() : refresh()));
 }

@@ -4,7 +4,7 @@ type Link = [text: string, href: string];
 
 const CREDITS: [term: string, ...parts: (Link | string)[]][] = [
   ["Creator", ["m5rcel", "https://twitter.com/m5rcode"]],
-  ["Inspired by", ["yash's awesome vencord.org site", "https://github.com/YashRajCodes/"]],
+  ["Inspired by", ["yash's awesome vencord.org site", "https://vencord.org"]],
   ["Logo", ["Discord", "https://discord.com/branding"]],
   ["Explosion", ["Pixel explosion by JROB774", "https://opengameart.org/content/pixel-explosion-12-frames"], " · ",
     ["CC BY 3.0", "https://creativecommons.org/licenses/by/3.0/"], ". Scaled for display."],

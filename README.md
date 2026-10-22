@@ -1,6 +1,23 @@
 # discord.lifestyle
 cool clicker game
 
+## Discord embed
+
+The website's link preview uses `public/embed-banner.jpg`. The existing favicon is
+also served at `/favicon.png` so Discord messages can use it as their embed author
+icon.
+
+`public/discord-embed.json` is a Discord message payload with that author icon,
+the banner, and three link buttons: **m5rcel**, **delete vencord.**, and
+**ign.bio/m5r**. Send it with a Discord bot or a webhook that supports message
+components. For webhook execution, set the `with_components=true` query parameter.
+The banner and icon URLs must be deployed before sending the message.
+
+Discord's automatic website link previews do not support custom buttons or a
+custom embed author icon. The message payload must be posted explicitly; linking
+to the website or the JSON file will not create the buttons. These buttons are
+only part of the Discord message and are not added to the webpage.
+
 ## Layout
 
 ```

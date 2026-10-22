@@ -3,20 +3,25 @@ cool clicker game
 
 ## Discord embed
 
-The website's link preview uses `public/embed-banner.jpg`. The existing favicon is
-also served at `/favicon.png` so Discord messages can use it as their embed author
-icon.
+The deployed site is **https://discord.xn--q9jyb4c/** (`discord.みんな`).
+`index.html` advertises `public/discord-embed.json` with a server-rendered
+`<link rel="discord:component-embed" type="application/json">`. Discord reads this
+when the site URL is shared; no bot or webhook is needed.
 
-`public/discord-embed.json` is a Discord message payload with that author icon,
-the banner, and three link buttons: **m5rcel**, **delete vencord.**, and
-**ign.bio/m5r**. Send it with a Discord bot or a webhook that supports message
-components. For webhook execution, set the `with_components=true` query parameter.
-The banner and icon URLs must be deployed before sending the message.
+The JSON follows Discord's [component embed format](https://discord.com/developers/docs/link-previews/component-embeds):
+one parent Container, a Section with the existing favicon as its Thumbnail icon,
+a Media Gallery containing the attached banner, and an Action Row with three
+link buttons: **m5rcel**, **delete vencord.**, and **ign.bio/m5r**. The buttons are
+only in the link preview, not on the webpage.
 
-Discord's automatic website link previews do not support custom buttons or a
-custom embed author icon. The message payload must be posted explicitly; linking
-to the website or the JSON file will not create the buttons. These buttons are
-only part of the Discord message and are not added to the webpage.
+Keep the JSON under Discord's 3,000-byte limit. The JSON URL must be on the page's
+host, a subdomain, or its parent domain, and the JSON and images must be publicly
+fetchable. If the site moves, update the URLs in `index.html` and the payload.
+Open Graph and Twitter tags use the same banner as a fallback.
+
+Discord caches previews. After deploying, share a fresh URL such as
+`https://discord.xn--q9jyb4c/?embed=2` to test the updated preview, or use Discord's
+[Embed Debugger](https://discord.com/developers/embeds) to inspect the URL.
 
 ## Layout
 
